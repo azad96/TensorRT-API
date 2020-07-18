@@ -1,5 +1,7 @@
 Facebook Multigrain repository: [link](https://github.com/facebookresearch/multigrain)
 
+This sample is an example of using a plugin layer in TensorRT-API.
+
 # How To Run
 
 1.  Execute the gen_wts.py file in pytorch-multigrain to generate the appropriate weight file with wts extension. This file will be used by TensorRT-API. You can download the weights from the multigrain link I shared at the top. If you don't have a weight file comment the lines below for now.
