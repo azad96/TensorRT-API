@@ -18,13 +18,13 @@ find_package(OpenCV)
 include_directories(OpenCV_INCLUDE_DIRS)
 set(CUDA_NVCC_PLAGS ${CUDA_NVCC_PLAGS};-std=c++11;-g;-G;-gencode;arch=compute_61;code=sm_61;-gencode;arch=compute_60;code=sm_60;-gencode;arch=compute_62;code=sm_62)
 
-file(GLOB_RECURSE multigrain_Sources
+file(GLOB_RECURSE Project_Sources
         ${PROJECT_SOURCE_DIR}/include/*
         ${PROJECT_SOURCE_DIR}/src/*)
 
-cuda_add_executable(multigrain ${multigrain_Sources} )
-target_link_libraries(multigrain nvinfer)
-target_link_libraries(multigrain cudart)
-target_link_libraries(multigrain ${OpenCV_LIBRARIES})
+cuda_add_executable(${PROJECT_NAME} ${Project_Sources} )
+target_link_libraries(${PROJECT_NAME} nvinfer)
+target_link_libraries(${PROJECT_NAME} cudart)
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBRARIES})
 
 
