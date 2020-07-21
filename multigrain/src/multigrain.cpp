@@ -166,258 +166,258 @@ nvinfer1::ITensor* resnet50(nvinfer1::INetworkDefinition *network, std::map<std:
     return x;
 }
 
+namespace Project{
+    MultiGrain::MultiGrain(std::string &weight_path, int in_channel, int in_height, int in_width, int output_count, unsigned int batch_size) {
+        m_iChannel = in_channel;
+        m_iHeight = in_height;
+        m_iWidth = in_width;
 
-MultiGrain::MultiGrain(std::string &weight_path, int in_channel, int in_height, int in_width, int output_count, unsigned int batch_size) {
-    m_iChannel = in_channel;
-    m_iHeight = in_height;
-    m_iWidth = in_width;
+        m_iNumberOfClassess = output_count;
+        m_uiNetworkBatchSize = batch_size;
 
-    m_iNumberOfClassess = output_count;
-    m_uiNetworkBatchSize = batch_size;
+        char cache_path[256];
+        std::string basepath = weight_path.substr(0, weight_path.find_last_of('.'));
+        sprintf(cache_path, "%s.%d.%d.%d.%u.engine", basepath.c_str(), m_iHeight, m_iWidth, m_iNumberOfClassess, m_uiNetworkBatchSize);
+        
+        printf(LOG_TRT "attempting to open cache file %s\n", cache_path);
+        std::ifstream cache_file(cache_path, std::ios::binary);
 
-    char cache_path[256];
-    std::string basepath = weight_path.substr(0, weight_path.find_last_of('.'));
-    sprintf(cache_path, "%s.%d.%d.%d.%u.engine", basepath.c_str(), m_iHeight, m_iWidth, m_iNumberOfClassess, m_uiNetworkBatchSize);
-    
-    printf(LOG_TRT "attempting to open cache file %s\n", cache_path);
-    std::ifstream cache_file(cache_path, std::ios::binary);
+        // create a model using the API directly and serialize it to a stream
+        char *trtModelStream{nullptr};
+        size_t size{0};
 
-    // create a model using the API directly and serialize it to a stream
-    char *trtModelStream{nullptr};
-    size_t size{0};
+        if (!cache_file) {
+            std::cout << "[" << PROJECT << "] Cache file is not found. Creating engine ..." << std::endl;
+            std::map<std::string, nvinfer1::Weights> weightMap;
+            if (loadWeights(weight_path, weightMap) != true){
+                errorOccurred = true;
+                return;
+            }
 
-    if (!cache_file) {
-        std::cout << "[" << PROJECT << "] Cache file is not found. Creating engine ..." << std::endl;
-        std::map<std::string, nvinfer1::Weights> weightMap;
-        if (loadWeights(weight_path, weightMap) != true){
+            nvinfer1::IHostMemory *modelStream{nullptr};
+            // Create builder
+            nvinfer1::IBuilder *builder = nvinfer1::createInferBuilder(gLogger);
+
+            // Create model to populate the network, then set the outputs and create an engine
+            nvinfer1::ICudaEngine *engine = CreateEngine(weightMap, m_uiNetworkBatchSize, builder,
+                                                            nvinfer1::DataType::kFLOAT);
+            if(engine == nullptr){
+                std::cerr << "[" << PROJECT << "] Engine creation failed." << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            else{
+                std::cout << "[" << PROJECT << "] Engine creation is successful." << std::endl;
+            }
+
+            // Serialize the engine
+            modelStream = engine->serialize();
+            if(modelStream == nullptr){
+                std::cerr << "[" << PROJECT << "] Engine serialization failed. Modelstream returned nullptr." << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            // Close everything down
+            engine->destroy();
+            builder->destroy();
+
+            std::ofstream p(cache_path);
+            if (!p) {
+                std::cerr << "[" << PROJECT << "] Could not open plan output file" << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            p.write(reinterpret_cast<const char *>(modelStream->data()), modelStream->size());
+            modelStream->destroy();
+            cache_file = std::ifstream(cache_path, std::ios::binary);
+        }
+
+        if (cache_file.good()) {
+            cache_file.seekg(0, cache_file.end);
+            size = cache_file.tellg();
+            cache_file.seekg(0, cache_file.beg);
+            trtModelStream = new char[size];
+            cache_file.read(trtModelStream, size);
+            cache_file.close();
+        }
+        else {
+            std::cerr << "[" << PROJECT << "] Failed to open cache file." << std::endl;
             errorOccurred = true;
             return;
         }
 
-        nvinfer1::IHostMemory *modelStream{nullptr};
-        // Create builder
-        nvinfer1::IBuilder *builder = nvinfer1::createInferBuilder(gLogger);
-
-        // Create model to populate the network, then set the outputs and create an engine
-        nvinfer1::ICudaEngine *engine = CreateEngine(weightMap, m_uiNetworkBatchSize, builder,
-                                                        nvinfer1::DataType::kFLOAT);
-        if(engine == nullptr){
-            std::cerr << "[" << PROJECT << "] Engine creation failed." << std::endl;
+        m_runtime = nvinfer1::createInferRuntime(gLogger);
+        if(m_runtime == nullptr){
+            std::cerr << "[" << PROJECT << "] CreateInferRuntime failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        else{
-            std::cout << "[" << PROJECT << "] Engine creation is successful." << std::endl;
-        }
-
-        // Serialize the engine
-        modelStream = engine->serialize();
-        if(modelStream == nullptr){
-            std::cerr << "[" << PROJECT << "] Engine serialization failed. Modelstream returned nullptr." << std::endl;
+        nvinfer1::PluginFactoryMG pf;
+        m_engine = m_runtime->deserializeCudaEngine(trtModelStream, size, &pf);
+        if(m_engine == nullptr){
+            std::cerr << "[" << PROJECT << "] DeserializeCudaEngine failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        // Close everything down
-        engine->destroy();
-        builder->destroy();
-
-        std::ofstream p(cache_path);
-        if (!p) {
-            std::cerr << "[" << PROJECT << "] Could not open plan output file" << std::endl;
+        m_context = m_engine->createExecutionContext();
+        if(m_context == nullptr){
+            std::cerr << "[" << PROJECT << "] CreateExecutionContext failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        p.write(reinterpret_cast<const char *>(modelStream->data()), modelStream->size());
-        modelStream->destroy();
-        cache_file = std::ifstream(cache_path, std::ios::binary);
     }
 
-    if (cache_file.good()) {
-        cache_file.seekg(0, cache_file.end);
-        size = cache_file.tellg();
-        cache_file.seekg(0, cache_file.beg);
-        trtModelStream = new char[size];
-        cache_file.read(trtModelStream, size);
-        cache_file.close();
-    }
-    else {
-        std::cerr << "[" << PROJECT << "] Failed to open cache file." << std::endl;
-        errorOccurred = true;
-        return;
+    MultiGrain::~MultiGrain() {
+        if (m_context != nullptr) { m_context->destroy(); }
+        if (m_engine != nullptr) { m_engine->destroy(); }
+        if (m_runtime != nullptr) { m_runtime->destroy(); }
+        if (m_pNetInputGPU != nullptr) {
+            cudaFree(m_pNetInputGPU);
+            m_pNetInputGPU = nullptr;
+        }
+        if (m_pNetOutputGPU != nullptr) {
+            cudaFree(m_pNetOutputGPU);
+            m_pNetOutputGPU = nullptr;
+        }
+        if (m_pNetOutputCPU != nullptr) {
+            cudaFreeHost(m_pNetOutputCPU);
+            m_pNetOutputCPU = nullptr;
+        }
+        if (m_stream != NULL) { cudaStreamDestroy(m_stream); }
     }
 
-    m_runtime = nvinfer1::createInferRuntime(gLogger);
-    if(m_runtime == nullptr){
-        std::cerr << "[" << PROJECT << "] CreateInferRuntime failed." << std::endl;
-        errorOccurred = true;
-        return;
+    nvinfer1::ICudaEngine* MultiGrain::CreateEngine(std::map<std::string, nvinfer1::Weights> weightMap, unsigned int maxBatchSize, nvinfer1::IBuilder* builder, nvinfer1::DataType dt){
+        nvinfer1::INetworkDefinition* network = builder->createNetwork();
+
+        nvinfer1::ITensor* input = network->addInput(INPUT_BLOB_NAME, dt, nvinfer1::Dims{3, {m_iChannel, m_iHeight, m_iWidth}});
+        assert(input);
+
+        nvinfer1::ITensor* features = resnet50(network, weightMap, input);
+        
+        // GEM
+        auto cl_plugin = new nvinfer1::ClampingPlugin();
+        nvinfer1::ITensor* inputTensors[1]{features};
+        auto cl1 = network->addPluginExt(inputTensors, 1, *cl_plugin);
+        cl1->setName("cl1");
+
+        const float pow1 = 3.0f;
+        nvinfer1::IConstantLayer* cons1 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow1, 1});
+        nvinfer1::IElementWiseLayer* ew1 = network->addElementWise(*cl1->getOutput(0), *cons1->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
+
+        nvinfer1::IPoolingLayer* pool1 = network->addPooling(*ew1->getOutput(0), nvinfer1::PoolingType::kAVERAGE, nvinfer1::DimsHW{7, 7});
+        assert(pool1);
+        pool1->setStride(nvinfer1::DimsHW{1, 1});
+
+        const float pow2 = 1.0/3.0;
+        nvinfer1::IConstantLayer* cons2 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow2, 1});
+        nvinfer1::IElementWiseLayer* ew2 = network->addElementWise(*pool1->getOutput(0), *cons2->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
+        // GEM
+        
+        // L2N
+        const float pow3 = 2.0f;
+        nvinfer1::IConstantLayer* cons3 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow3, 1});
+        nvinfer1::IElementWiseLayer* ew3 = network->addElementWise(*ew2->getOutput(0), *cons3->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
+
+        nvinfer1::IReduceLayer *reduce1 = network->addReduce(*ew3->getOutput(0), nvinfer1::ReduceOperation::kSUM, 1, true);
+        assert(reduce1);
+        
+        const float sum1 = 0.000001f;
+        nvinfer1::IConstantLayer* cons4 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &sum1, 1});
+        nvinfer1::IElementWiseLayer* ew4 = network->addElementWise(*reduce1->getOutput(0), *cons4->getOutput(0), nvinfer1::ElementWiseOperation::kSUM);
+
+        nvinfer1::IUnaryLayer* un1 = network->addUnary(*ew4->getOutput(0), nvinfer1::UnaryOperation::kSQRT);
+        
+        nvinfer1::IElementWiseLayer* ew5 = network->addElementWise(*ew2->getOutput(0), *un1->getOutput(0), nvinfer1::ElementWiseOperation::kDIV);
+        // L2N
+
+        ew5->getOutput(0)->setName(OUTPUT_BLOB_NAME);
+        network->markOutput(*ew5->getOutput(0));
+        
+        // Build engine
+        auto builder_config = builder->createBuilderConfig();
+        builder_config->setMaxWorkspaceSize(1 << 20);
+        builder->setMaxBatchSize(maxBatchSize);
+
+        if (builder->platformHasFastFp16())
+            builder_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+
+        nvinfer1::ICudaEngine* engine = builder->buildEngineWithConfig(*network, *builder_config);
+
+        network->destroy();
+
+        // Release host memory
+        for (auto& mem : weightMap){
+            free((void*) (mem.second.values));
+        }
+
+        return engine;
     }
-    nvinfer1::PluginFactoryMG pf;
-    m_engine = m_runtime->deserializeCudaEngine(trtModelStream, size, &pf);
-    if(m_engine == nullptr){
-        std::cerr << "[" << PROJECT << "] DeserializeCudaEngine failed." << std::endl;
-        errorOccurred = true;
-        return;
+
+    bool MultiGrain::AllocateMemory() {
+        auto inputDims = GetTensorDims(INPUT_BLOB_NAME);
+        auto outputDims = GetTensorDims(OUTPUT_BLOB_NAME);
+        size_t inputSize = 1;
+        size_t outSize = 1;
+        for (int i = 0; i < inputDims.nbDims; i++) inputSize *= inputDims.d[i];
+        for (int i = 0; i < outputDims.nbDims; i++) outSize *= outputDims.d[i];
+
+        m_networkInputSize = m_uiNetworkBatchSize * inputSize * sizeof(float);
+        m_networkOutputSize = m_uiNetworkBatchSize * outSize * sizeof(float);
+
+        if ((m_networkInputSize == 0) || (m_networkOutputSize == 0)) {
+            std::cerr << "[" << PROJECT << "] Invalid network size is encountered." << std::endl;
+            return false;
+        }
+
+        CHECK(cudaMalloc((void**)&m_pNetInputGPU, m_networkInputSize));
+        CHECK(cudaMalloc((void**)&m_pNetOutputGPU, m_networkOutputSize));
+        CHECK(cudaMallocHost((void**)&m_pNetOutputCPU, m_networkOutputSize));
+
+        return true;
     }
-    m_context = m_engine->createExecutionContext();
-    if(m_context == nullptr){
-        std::cerr << "[" << PROJECT << "] CreateExecutionContext failed." << std::endl;
-        errorOccurred = true;
-        return;
+
+    const nvinfer1::Dims MultiGrain::GetTensorDims(const char *name) {
+        int bindingIndex = m_engine->getBindingIndex(name);
+        if (bindingIndex != -1){
+            return m_engine->getBindingDimensions(bindingIndex);
+        }
+        return nvinfer1::Dims{3, {0, 0, 0}};
+    }
+
+    bool MultiGrain::Init() {
+        if (errorOccurred) {
+            return false;
+        }
+        if(AllocateMemory() == false){
+            std::cerr << "[" << PROJECT << "] AllocateMemory failed." << std::endl;
+            errorOccurred = true;
+            return false;            
+        }
+        if (cudaStreamCreate(&m_stream) != cudaSuccess) {
+            std::cerr << "[" << PROJECT << "] Stream creation failed." << std::endl;
+            errorOccurred = true;
+            return false;
+        }
+        m_bInitialized = true;
+        return true;
+    }
+
+    bool MultiGrain::DoInference(float* input) {
+        if (!m_bInitialized || errorOccurred) {
+            std::cerr << "[" << PROJECT << "] Error occurred before inference operation." << std::endl;
+            return false;
+        }
+        if(m_engine->getNbBindings() != 2){
+            std::cerr << "[" << PROJECT << "] Number of bindings for the engine is invalid" << std::endl;
+            return false;
+        }
+        void *buffers[2];
+        buffers[0] = m_pNetInputGPU;
+        buffers[1] = m_pNetOutputGPU;
+        CHECK(cudaMemcpyAsync(m_pNetInputGPU, input, m_networkInputSize, cudaMemcpyHostToDevice, m_stream));
+        m_context->enqueue(m_uiNetworkBatchSize, buffers, m_stream, nullptr);
+        CHECK(cudaMemcpyAsync(m_pNetOutputCPU, m_pNetOutputGPU, m_networkOutputSize, cudaMemcpyDeviceToHost, m_stream));
+        cudaStreamSynchronize(m_stream);
+        return true;
     }
 }
-
-MultiGrain::~MultiGrain() {
-    if (m_context != nullptr) { m_context->destroy(); }
-    if (m_engine != nullptr) { m_engine->destroy(); }
-    if (m_runtime != nullptr) { m_runtime->destroy(); }
-    if (m_pNetInputGPU != nullptr) {
-        cudaFree(m_pNetInputGPU);
-        m_pNetInputGPU = nullptr;
-    }
-    if (m_pNetOutputGPU != nullptr) {
-        cudaFree(m_pNetOutputGPU);
-        m_pNetOutputGPU = nullptr;
-    }
-    if (m_pNetOutputCPU != nullptr) {
-        cudaFreeHost(m_pNetOutputCPU);
-        m_pNetOutputCPU = nullptr;
-    }
-    if (m_stream != NULL) { cudaStreamDestroy(m_stream); }
-}
-
-nvinfer1::ICudaEngine* MultiGrain::CreateEngine(std::map<std::string, nvinfer1::Weights> weightMap, unsigned int maxBatchSize, nvinfer1::IBuilder* builder, nvinfer1::DataType dt){
-    nvinfer1::INetworkDefinition* network = builder->createNetwork();
-
-    nvinfer1::ITensor* input = network->addInput(INPUT_BLOB_NAME, dt, nvinfer1::Dims{3, {m_iChannel, m_iHeight, m_iWidth}});
-    assert(input);
-
-    nvinfer1::ITensor* features = resnet50(network, weightMap, input);
-    
-    // GEM
-    auto cl_plugin = new nvinfer1::ClampingPlugin();
-    nvinfer1::ITensor* inputTensors[1]{features};
-    auto cl1 = network->addPluginExt(inputTensors, 1, *cl_plugin);
-    cl1->setName("cl1");
-
-    const float pow1 = 3.0f;
-    nvinfer1::IConstantLayer* cons1 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow1, 1});
-    nvinfer1::IElementWiseLayer* ew1 = network->addElementWise(*cl1->getOutput(0), *cons1->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
-
-    nvinfer1::IPoolingLayer* pool1 = network->addPooling(*ew1->getOutput(0), nvinfer1::PoolingType::kAVERAGE, nvinfer1::DimsHW{7, 7});
-    assert(pool1);
-    pool1->setStride(nvinfer1::DimsHW{1, 1});
-
-    const float pow2 = 1.0/3.0;
-    nvinfer1::IConstantLayer* cons2 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow2, 1});
-    nvinfer1::IElementWiseLayer* ew2 = network->addElementWise(*pool1->getOutput(0), *cons2->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
-    // GEM
-    
-    // L2N
-    const float pow3 = 2.0f;
-    nvinfer1::IConstantLayer* cons3 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &pow3, 1});
-    nvinfer1::IElementWiseLayer* ew3 = network->addElementWise(*ew2->getOutput(0), *cons3->getOutput(0), nvinfer1::ElementWiseOperation::kPOW);
-
-    nvinfer1::IReduceLayer *reduce1 = network->addReduce(*ew3->getOutput(0), nvinfer1::ReduceOperation::kSUM, 1, true);
-    assert(reduce1);
-    
-    const float sum1 = 0.000001f;
-    nvinfer1::IConstantLayer* cons4 = network->addConstant(nvinfer1::Dims{3, {1, 1, 1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, &sum1, 1});
-    nvinfer1::IElementWiseLayer* ew4 = network->addElementWise(*reduce1->getOutput(0), *cons4->getOutput(0), nvinfer1::ElementWiseOperation::kSUM);
-
-    nvinfer1::IUnaryLayer* un1 = network->addUnary(*ew4->getOutput(0), nvinfer1::UnaryOperation::kSQRT);
-    
-    nvinfer1::IElementWiseLayer* ew5 = network->addElementWise(*ew2->getOutput(0), *un1->getOutput(0), nvinfer1::ElementWiseOperation::kDIV);
-    // L2N
-
-    ew5->getOutput(0)->setName(OUTPUT_BLOB_NAME);
-    network->markOutput(*ew5->getOutput(0));
-    
-    // Build engine
-    auto builder_config = builder->createBuilderConfig();
-    builder_config->setMaxWorkspaceSize(1 << 20);
-    builder->setMaxBatchSize(maxBatchSize);
-
-    if (builder->platformHasFastFp16())
-        builder_config->setFlag(nvinfer1::BuilderFlag::kFP16);
-
-    nvinfer1::ICudaEngine* engine = builder->buildEngineWithConfig(*network, *builder_config);
-
-    network->destroy();
-
-    // Release host memory
-    for (auto& mem : weightMap){
-        free((void*) (mem.second.values));
-    }
-
-    return engine;
-}
-
-bool MultiGrain::AllocateMemory() {
-    auto inputDims = GetTensorDims(INPUT_BLOB_NAME);
-    auto outputDims = GetTensorDims(OUTPUT_BLOB_NAME);
-    size_t inputSize = 1;
-    size_t outSize = 1;
-    for (int i = 0; i < inputDims.nbDims; i++) inputSize *= inputDims.d[i];
-    for (int i = 0; i < outputDims.nbDims; i++) outSize *= outputDims.d[i];
-
-    m_networkInputSize = m_uiNetworkBatchSize * inputSize * sizeof(float);
-    m_networkOutputSize = m_uiNetworkBatchSize * outSize * sizeof(float);
-
-    if ((m_networkInputSize == 0) || (m_networkOutputSize == 0)) {
-        std::cerr << "[" << PROJECT << "] Invalid network size is encountered." << std::endl;
-        return false;
-    }
-
-    CHECK(cudaMalloc((void**)&m_pNetInputGPU, m_networkInputSize));
-    CHECK(cudaMalloc((void**)&m_pNetOutputGPU, m_networkOutputSize));
-    CHECK(cudaMallocHost((void**)&m_pNetOutputCPU, m_networkOutputSize));
-
-    return true;
-}
-
-const nvinfer1::Dims MultiGrain::GetTensorDims(const char *name) {
-    int bindingIndex = m_engine->getBindingIndex(name);
-    if (bindingIndex != -1){
-        return m_engine->getBindingDimensions(bindingIndex);
-    }
-    return nvinfer1::Dims{3, {0, 0, 0}};
-}
-
-bool MultiGrain::Init() {
-    if (errorOccurred) {
-        return false;
-    }
-    if(AllocateMemory() == false){
-        std::cerr << "[" << PROJECT << "] AllocateMemory failed." << std::endl;
-        errorOccurred = true;
-        return false;            
-    }
-    if (cudaStreamCreate(&m_stream) != cudaSuccess) {
-        std::cerr << "[" << PROJECT << "] Stream creation failed." << std::endl;
-        errorOccurred = true;
-        return false;
-    }
-    m_bInitialized = true;
-    return true;
-}
-
-bool MultiGrain::DoInference(float* input) {
-    if (!m_bInitialized || errorOccurred) {
-        std::cerr << "[" << PROJECT << "] Error occurred before inference operation." << std::endl;
-        return false;
-    }
-    if(m_engine->getNbBindings() != 2){
-        std::cerr << "[" << PROJECT << "] Number of bindings for the engine is invalid" << std::endl;
-        return false;
-    }
-    void *buffers[2];
-    buffers[0] = m_pNetInputGPU;
-    buffers[1] = m_pNetOutputGPU;
-    CHECK(cudaMemcpyAsync(m_pNetInputGPU, input, m_networkInputSize, cudaMemcpyHostToDevice, m_stream));
-    m_context->enqueue(m_uiNetworkBatchSize, buffers, m_stream, nullptr);
-    CHECK(cudaMemcpyAsync(m_pNetOutputCPU, m_pNetOutputGPU, m_networkOutputSize, cudaMemcpyDeviceToHost, m_stream));
-    cudaStreamSynchronize(m_stream);
-    return true;
-}
-

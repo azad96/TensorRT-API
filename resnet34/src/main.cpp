@@ -1,5 +1,7 @@
 #include "resnet34.h"
 
+using namespace Project;
+
 int main(int argc, char** argv){
     int INPUT_C = 3;
     int INPUT_H = 224;

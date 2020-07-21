@@ -172,220 +172,221 @@ nvinfer1::ITensor* resnet50(nvinfer1::INetworkDefinition *network, std::map<std:
 }
 
 
-Resnet50::Resnet50(std::string &weight_path, int in_channel, int in_height, int in_width, int output_count, unsigned int batch_size) {
-    m_iChannel = in_channel;
-    m_iHeight = in_height;
-    m_iWidth = in_width;
+namespace Project{
+    Resnet50::Resnet50(std::string &weight_path, int in_channel, int in_height, int in_width, int output_count, unsigned int batch_size) {
+        m_iChannel = in_channel;
+        m_iHeight = in_height;
+        m_iWidth = in_width;
 
-    m_iNumberOfClasses = output_count;
-    m_uiNetworkBatchSize = batch_size;
+        m_iNumberOfClasses = output_count;
+        m_uiNetworkBatchSize = batch_size;
 
-    char cache_path[256];
-    std::string basepath = weight_path.substr(0, weight_path.find_last_of('.'));
-    sprintf(cache_path, "%s.%d.%d.%d.%u.engine", basepath.c_str(), m_iHeight, m_iWidth, m_iNumberOfClasses, m_uiNetworkBatchSize);
-    
-    printf(LOG_TRT "attempting to open cache file %s\n", cache_path);
-    std::ifstream cache_file(cache_path, std::ios::binary);
+        char cache_path[256];
+        std::string basepath = weight_path.substr(0, weight_path.find_last_of('.'));
+        sprintf(cache_path, "%s.%d.%d.%d.%u.engine", basepath.c_str(), m_iHeight, m_iWidth, m_iNumberOfClasses, m_uiNetworkBatchSize);
+        
+        printf(LOG_TRT "attempting to open cache file %s\n", cache_path);
+        std::ifstream cache_file(cache_path, std::ios::binary);
 
-    // create a model using the API directly and serialize it to a stream
-    char *trtModelStream{nullptr};
-    size_t size{0};
+        // create a model using the API directly and serialize it to a stream
+        char *trtModelStream{nullptr};
+        size_t size{0};
 
-    if (!cache_file) {
-        std::cout << "[" << PROJECT << "] Cache file is not found. Creating engine ..." << std::endl;
-        std::map<std::string, nvinfer1::Weights> weightMap;
-        if (loadWeights(weight_path, weightMap) != true){
+        if (!cache_file) {
+            std::cout << "[" << PROJECT << "] Cache file is not found. Creating engine ..." << std::endl;
+            std::map<std::string, nvinfer1::Weights> weightMap;
+            if (loadWeights(weight_path, weightMap) != true){
+                errorOccurred = true;
+                return;
+            }
+
+            nvinfer1::IHostMemory *modelStream{nullptr};
+            // Create builder
+            nvinfer1::IBuilder *builder = nvinfer1::createInferBuilder(gLogger);
+
+            // Create model to populate the network, then set the outputs and create an engine
+            nvinfer1::ICudaEngine *engine = CreateEngine(weightMap, m_uiNetworkBatchSize, builder,
+                                                            nvinfer1::DataType::kFLOAT);
+            if(engine == nullptr){
+                std::cerr << "[" << PROJECT << "] Engine creation failed." << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            else{
+                std::cout << "[" << PROJECT << "] Engine creation is successful." << std::endl;
+            }
+
+            // Serialize the engine
+            modelStream = engine->serialize();
+            if(modelStream == nullptr){
+                std::cerr << "[" << PROJECT << "] Engine serialization failed. Modelstream returned nullptr." << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            // Close everything down
+            engine->destroy();
+            builder->destroy();
+
+            std::ofstream p(cache_path);
+            if (!p) {
+                std::cerr << "[" << PROJECT << "] Could not open plan output file" << std::endl;
+                errorOccurred = true;
+                return;
+            }
+            p.write(reinterpret_cast<const char *>(modelStream->data()), modelStream->size());
+            modelStream->destroy();
+            cache_file = std::ifstream(cache_path, std::ios::binary);
+        }
+
+        if (cache_file.good()) {
+            cache_file.seekg(0, cache_file.end);
+            size = cache_file.tellg();
+            cache_file.seekg(0, cache_file.beg);
+            trtModelStream = new char[size];
+            cache_file.read(trtModelStream, size);
+            cache_file.close();
+        }
+        else {
+            std::cerr << "[" << PROJECT << "] Failed to open cache file." << std::endl;
             errorOccurred = true;
             return;
         }
 
-        nvinfer1::IHostMemory *modelStream{nullptr};
-        // Create builder
-        nvinfer1::IBuilder *builder = nvinfer1::createInferBuilder(gLogger);
-
-        // Create model to populate the network, then set the outputs and create an engine
-        nvinfer1::ICudaEngine *engine = CreateEngine(weightMap, m_uiNetworkBatchSize, builder,
-                                                        nvinfer1::DataType::kFLOAT);
-        if(engine == nullptr){
-            std::cerr << "[" << PROJECT << "] Engine creation failed." << std::endl;
+        m_runtime = nvinfer1::createInferRuntime(gLogger);
+        if(m_runtime == nullptr){
+            std::cerr << "[" << PROJECT << "] CreateInferRuntime failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        else{
-            std::cout << "[" << PROJECT << "] Engine creation is successful." << std::endl;
-        }
-
-        // Serialize the engine
-        modelStream = engine->serialize();
-        if(modelStream == nullptr){
-            std::cerr << "[" << PROJECT << "] Engine serialization failed. Modelstream returned nullptr." << std::endl;
+        m_engine = m_runtime->deserializeCudaEngine(trtModelStream, size, nullptr);
+        if(m_engine == nullptr){
+            std::cerr << "[" << PROJECT << "] DeserializeCudaEngine failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        // Close everything down
-        engine->destroy();
-        builder->destroy();
-
-        std::ofstream p(cache_path);
-        if (!p) {
-            std::cerr << "[" << PROJECT << "] Could not open plan output file" << std::endl;
+        m_context = m_engine->createExecutionContext();
+        if(m_context == nullptr){
+            std::cerr << "[" << PROJECT << "] CreateExecutionContext failed." << std::endl;
             errorOccurred = true;
             return;
         }
-        p.write(reinterpret_cast<const char *>(modelStream->data()), modelStream->size());
-        modelStream->destroy();
-        cache_file = std::ifstream(cache_path, std::ios::binary);
     }
 
-    if (cache_file.good()) {
-        cache_file.seekg(0, cache_file.end);
-        size = cache_file.tellg();
-        cache_file.seekg(0, cache_file.beg);
-        trtModelStream = new char[size];
-        cache_file.read(trtModelStream, size);
-        cache_file.close();
-    }
-    else {
-        std::cerr << "[" << PROJECT << "] Failed to open cache file." << std::endl;
-        errorOccurred = true;
-        return;
+    Resnet50::~Resnet50() {
+        if (m_context != nullptr) { m_context->destroy(); }
+        if (m_engine != nullptr) { m_engine->destroy(); }
+        if (m_runtime != nullptr) { m_runtime->destroy(); }
+        if (m_pNetInputGPU != nullptr) {
+            cudaFree(m_pNetInputGPU);
+            m_pNetInputGPU = nullptr;
+        }
+        if (m_pNetOutputGPU != nullptr) {
+            cudaFree(m_pNetOutputGPU);
+            m_pNetOutputGPU = nullptr;
+        }
+        if (m_pNetOutputCPU != nullptr) {
+            cudaFreeHost(m_pNetOutputCPU);
+            m_pNetOutputCPU = nullptr;
+        }
+        if (m_stream != NULL) { cudaStreamDestroy(m_stream); }
     }
 
-    m_runtime = nvinfer1::createInferRuntime(gLogger);
-    if(m_runtime == nullptr){
-        std::cerr << "[" << PROJECT << "] CreateInferRuntime failed." << std::endl;
-        errorOccurred = true;
-        return;
+    nvinfer1::ICudaEngine* Resnet50::CreateEngine(std::map<std::string, nvinfer1::Weights> weightMap, unsigned int maxBatchSize, nvinfer1::IBuilder* builder, nvinfer1::DataType dt){
+        nvinfer1::INetworkDefinition* network = builder->createNetwork();
+
+        nvinfer1::ITensor* input = network->addInput(INPUT_BLOB_NAME, dt, nvinfer1::Dims{3, {m_iChannel, m_iHeight, m_iWidth}});
+        assert(input);
+
+        nvinfer1::ITensor* base = resnet50(network, weightMap, input, m_iNumberOfClasses);
+
+        base->setName(OUTPUT_BLOB_NAME);
+        network->markOutput(*base);
+        
+        // Build engine
+        auto builder_config = builder->createBuilderConfig();
+        builder_config->setMaxWorkspaceSize(1 << 20);
+        builder->setMaxBatchSize(maxBatchSize);
+
+        if (builder->platformHasFastFp16())
+            builder_config->setFlag(nvinfer1::BuilderFlag::kFP16);
+
+        nvinfer1::ICudaEngine* engine = builder->buildEngineWithConfig(*network, *builder_config);
+
+        network->destroy();
+
+        // Release host memory
+        for (auto& mem : weightMap){
+            free((void*) (mem.second.values));
+        }
+
+        return engine;
     }
-    m_engine = m_runtime->deserializeCudaEngine(trtModelStream, size, nullptr);
-    if(m_engine == nullptr){
-        std::cerr << "[" << PROJECT << "] DeserializeCudaEngine failed." << std::endl;
-        errorOccurred = true;
-        return;
+
+    bool Resnet50::AllocateMemory() {
+        auto inputDims = GetTensorDims(INPUT_BLOB_NAME);
+        auto outputDims = GetTensorDims(OUTPUT_BLOB_NAME);
+        size_t inputSize = 1;
+        size_t outSize = 1;
+        for (int i = 0; i < inputDims.nbDims; i++) inputSize *= inputDims.d[i];
+        for (int i = 0; i < outputDims.nbDims; i++) outSize *= outputDims.d[i];
+
+        m_networkInputSize = m_uiNetworkBatchSize * inputSize * sizeof(float);
+        m_networkOutputSize = m_uiNetworkBatchSize * outSize * sizeof(float);
+
+        if ((m_networkInputSize == 0) || (m_networkOutputSize == 0)) {
+            std::cerr << "[" << PROJECT << "] Invalid network size is encountered." << std::endl;
+            return false;
+        }
+
+        CHECK(cudaMalloc((void**)&m_pNetInputGPU, m_networkInputSize));
+        CHECK(cudaMalloc((void**)&m_pNetOutputGPU, m_networkOutputSize));
+        CHECK(cudaMallocHost((void**)&m_pNetOutputCPU, m_networkOutputSize));
+
+        return true;
     }
-    m_context = m_engine->createExecutionContext();
-    if(m_context == nullptr){
-        std::cerr << "[" << PROJECT << "] CreateExecutionContext failed." << std::endl;
-        errorOccurred = true;
-        return;
+
+    const nvinfer1::Dims Resnet50::GetTensorDims(const char *name) {
+        int bindingIndex = m_engine->getBindingIndex(name);
+        if (bindingIndex != -1){
+            return m_engine->getBindingDimensions(bindingIndex);
+        }
+        return nvinfer1::Dims{3, {0, 0, 0}};
+    }
+
+    bool Resnet50::Init() {
+        if (errorOccurred) {
+            return false;
+        }
+        if(AllocateMemory() == false){
+            std::cerr << "[" << PROJECT << "] AllocateMemory failed." << std::endl;
+            errorOccurred = true;
+            return false;            
+        }
+        if (cudaStreamCreate(&m_stream) != cudaSuccess) {
+            std::cerr << "[" << PROJECT << "] Stream creation failed." << std::endl;
+            errorOccurred = true;
+            return false;
+        }
+        m_bInitialized = true;
+        return true;
+    }
+
+    bool Resnet50::DoInference(float* input) {
+        if (!m_bInitialized || errorOccurred) {
+            std::cerr << "[" << PROJECT << "] Error occurred before inference operation." << std::endl;
+            return false;
+        }
+        if(m_engine->getNbBindings() != 2){
+            std::cerr << "[" << PROJECT << "] Number of bindings for the engine is invalid" << std::endl;
+            return false;
+        }
+        void *buffers[2];
+        buffers[0] = m_pNetInputGPU;
+        buffers[1] = m_pNetOutputGPU;
+        CHECK(cudaMemcpyAsync(m_pNetInputGPU, input, m_networkInputSize, cudaMemcpyHostToDevice, m_stream));
+        m_context->enqueue(m_uiNetworkBatchSize, buffers, m_stream, nullptr);
+        CHECK(cudaMemcpyAsync(m_pNetOutputCPU, m_pNetOutputGPU, m_networkOutputSize, cudaMemcpyDeviceToHost, m_stream));
+        cudaStreamSynchronize(m_stream);
+        return true;
     }
 }
-
-Resnet50::~Resnet50() {
-    if (m_context != nullptr) { m_context->destroy(); }
-    if (m_engine != nullptr) { m_engine->destroy(); }
-    if (m_runtime != nullptr) { m_runtime->destroy(); }
-    if (m_pNetInputGPU != nullptr) {
-        cudaFree(m_pNetInputGPU);
-        m_pNetInputGPU = nullptr;
-    }
-    if (m_pNetOutputGPU != nullptr) {
-        cudaFree(m_pNetOutputGPU);
-        m_pNetOutputGPU = nullptr;
-    }
-    if (m_pNetOutputCPU != nullptr) {
-        cudaFreeHost(m_pNetOutputCPU);
-        m_pNetOutputCPU = nullptr;
-    }
-    if (m_stream != NULL) { cudaStreamDestroy(m_stream); }
-}
-
-nvinfer1::ICudaEngine* Resnet50::CreateEngine(std::map<std::string, nvinfer1::Weights> weightMap, unsigned int maxBatchSize, nvinfer1::IBuilder* builder, nvinfer1::DataType dt){
-    nvinfer1::INetworkDefinition* network = builder->createNetwork();
-
-    nvinfer1::ITensor* input = network->addInput(INPUT_BLOB_NAME, dt, nvinfer1::Dims{3, {m_iChannel, m_iHeight, m_iWidth}});
-    assert(input);
-
-    nvinfer1::ITensor* base = resnet50(network, weightMap, input, m_iNumberOfClasses);
-
-    base->setName(OUTPUT_BLOB_NAME);
-    network->markOutput(*base);
-    
-    // Build engine
-    auto builder_config = builder->createBuilderConfig();
-    builder_config->setMaxWorkspaceSize(1 << 20);
-    builder->setMaxBatchSize(maxBatchSize);
-
-    if (builder->platformHasFastFp16())
-        builder_config->setFlag(nvinfer1::BuilderFlag::kFP16);
-
-    nvinfer1::ICudaEngine* engine = builder->buildEngineWithConfig(*network, *builder_config);
-
-    network->destroy();
-
-    // Release host memory
-    for (auto& mem : weightMap){
-        free((void*) (mem.second.values));
-    }
-
-    return engine;
-}
-
-bool Resnet50::AllocateMemory() {
-    auto inputDims = GetTensorDims(INPUT_BLOB_NAME);
-    auto outputDims = GetTensorDims(OUTPUT_BLOB_NAME);
-    size_t inputSize = 1;
-    size_t outSize = 1;
-    for (int i = 0; i < inputDims.nbDims; i++) inputSize *= inputDims.d[i];
-    for (int i = 0; i < outputDims.nbDims; i++) outSize *= outputDims.d[i];
-
-    m_networkInputSize = m_uiNetworkBatchSize * inputSize * sizeof(float);
-    m_networkOutputSize = m_uiNetworkBatchSize * outSize * sizeof(float);
-
-    if ((m_networkInputSize == 0) || (m_networkOutputSize == 0)) {
-        std::cerr << "[" << PROJECT << "] Invalid network size is encountered." << std::endl;
-        return false;
-    }
-
-    CHECK(cudaMalloc((void**)&m_pNetInputGPU, m_networkInputSize));
-    CHECK(cudaMalloc((void**)&m_pNetOutputGPU, m_networkOutputSize));
-    CHECK(cudaMallocHost((void**)&m_pNetOutputCPU, m_networkOutputSize));
-
-    return true;
-}
-
-const nvinfer1::Dims Resnet50::GetTensorDims(const char *name) {
-    int bindingIndex = m_engine->getBindingIndex(name);
-    if (bindingIndex != -1){
-        return m_engine->getBindingDimensions(bindingIndex);
-    }
-    return nvinfer1::Dims{3, {0, 0, 0}};
-}
-
-bool Resnet50::Init() {
-    if (errorOccurred) {
-        return false;
-    }
-    if(AllocateMemory() == false){
-        std::cerr << "[" << PROJECT << "] AllocateMemory failed." << std::endl;
-        errorOccurred = true;
-        return false;            
-    }
-    if (cudaStreamCreate(&m_stream) != cudaSuccess) {
-        std::cerr << "[" << PROJECT << "] Stream creation failed." << std::endl;
-        errorOccurred = true;
-        return false;
-    }
-    m_bInitialized = true;
-    return true;
-}
-
-bool Resnet50::DoInference(float* input) {
-    if (!m_bInitialized || errorOccurred) {
-        std::cerr << "[" << PROJECT << "] Error occurred before inference operation." << std::endl;
-        return false;
-    }
-    if(m_engine->getNbBindings() != 2){
-        std::cerr << "[" << PROJECT << "] Number of bindings for the engine is invalid" << std::endl;
-        return false;
-    }
-    void *buffers[2];
-    buffers[0] = m_pNetInputGPU;
-    buffers[1] = m_pNetOutputGPU;
-    CHECK(cudaMemcpyAsync(m_pNetInputGPU, input, m_networkInputSize, cudaMemcpyHostToDevice, m_stream));
-    m_context->enqueue(m_uiNetworkBatchSize, buffers, m_stream, nullptr);
-    CHECK(cudaMemcpyAsync(m_pNetOutputCPU, m_pNetOutputGPU, m_networkOutputSize, cudaMemcpyDeviceToHost, m_stream));
-    cudaStreamSynchronize(m_stream);
-    return true;
-}
-

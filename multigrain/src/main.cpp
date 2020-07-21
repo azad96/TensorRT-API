@@ -1,8 +1,9 @@
 #include "multigrain.h"
 
+using namespace Project;
+
 const float means[3] = {0.485, 0.456, 0.406};
 const float stds[3]  = {0.229, 0.224, 0.225};
-
 
 void process_image(float* data, std::string image_name, int INPUT_H, int INPUT_W){
     cv::Mat img = cv::imread(image_name);
