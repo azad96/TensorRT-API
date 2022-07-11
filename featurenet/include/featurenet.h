@@ -3,9 +3,6 @@
 
 #include "tensorrt_base.h"
 
-// stuff we know about the network
-static const std::vector<const char*> INPUT_NAMES {"data"};
-static const std::vector<const char*> OUTPUT_NAMES {"stage1", "stage2", "stage3"};
 
 class FeatureNet: public TensorRT {
 public:
