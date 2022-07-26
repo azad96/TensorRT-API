@@ -27,4 +27,6 @@ std::map<std::string, nvinfer1::Weights> loadWeights(const std::string& file);
 
 nvinfer1::IScaleLayer* addBatchNorm2d(nvinfer1::INetworkDefinition *network, std::map<std::string, nvinfer1::Weights>& weightMap, nvinfer1::ITensor& input, std::string lname, float eps);
 
+nvinfer1::IScaleLayer* addBatchNormNd(nvinfer1::INetworkDefinition *network, std::map<std::string, nvinfer1::Weights>& weightMap, nvinfer1::ITensor& input, std::string lname, float eps);
+
 #endif // TRT_COMMON_H

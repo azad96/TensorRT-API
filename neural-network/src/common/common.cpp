@@ -73,3 +73,37 @@ nvinfer1::IScaleLayer* addBatchNorm2d(nvinfer1::INetworkDefinition *network, std
     assert(scale_1);
     return scale_1;
 }
+
+
+nvinfer1::IScaleLayer* addBatchNormNd(nvinfer1::INetworkDefinition *network, std::map<std::string, nvinfer1::Weights>& weightMap, nvinfer1::ITensor& input, std::string lname, float eps) {
+    float *gamma = (float*)weightMap[lname + ".weight"].values;
+    float *beta = (float*)weightMap[lname + ".bias"].values;
+    float *mean = (float*)weightMap[lname + ".running_mean"].values;
+    float *var = (float*)weightMap[lname + ".running_var"].values;
+    int len = weightMap[lname + ".running_var"].count;
+
+    float *scval = reinterpret_cast<float*>(malloc(sizeof(float) * len));
+    for (int i = 0; i < len; i++) {
+        scval[i] = gamma[i] / sqrt(var[i] + eps);
+    }
+    nvinfer1::Weights scale{nvinfer1::DataType::kFLOAT, scval, len};
+    
+    float *shval = reinterpret_cast<float*>(malloc(sizeof(float) * len));
+    for (int i = 0; i < len; i++) {
+        shval[i] = beta[i] - mean[i] * gamma[i] / sqrt(var[i] + eps);
+    }
+    nvinfer1::Weights shift{nvinfer1::DataType::kFLOAT, shval, len};
+
+    float *pval = reinterpret_cast<float*>(malloc(sizeof(float) * len));
+    for (int i = 0; i < len; i++) {
+        pval[i] = 1.0;
+    }
+    nvinfer1::Weights power{nvinfer1::DataType::kFLOAT, pval, len};
+
+    weightMap[lname + ".scale"] = scale;
+    weightMap[lname + ".shift"] = shift;
+    weightMap[lname + ".power"] = power;
+    nvinfer1::IScaleLayer* scale_1 = network->addScaleNd(input, nvinfer1::ScaleMode::kCHANNEL, shift, scale, power, 0);
+    assert(scale_1);
+    return scale_1;
+}
