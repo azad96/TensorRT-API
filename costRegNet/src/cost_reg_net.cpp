@@ -31,34 +31,34 @@ nvinfer1::ITensor* deconv3d(nvinfer1::INetworkDefinition *network, std::map<std:
     deconv1->setStrideNd(nvinfer1::Dims{3, {stride, stride, stride}});
     deconv1->setPaddingNd(nvinfer1::Dims{3, {padding, padding, padding}});
     
-    auto dims = deconv1->getOutput(0)->getDimensions().d;
+    // auto dims = deconv1->getOutput(0)->getDimensions().d;
 
-    auto slice1 = network->addSlice(*deconv1->getOutput(0), 
-                                    nvinfer1::Dims{4, {0, 0, 0, 0}},
-                                    nvinfer1::Dims{4, {dims[0], dims[1]+1, dims[2]+1, dims[3]+1}},
-                                    nvinfer1::Dims{4, {1, 1, 1, 1}});
-    assert(slice1);
-    slice1->setMode(nvinfer1::SliceMode::kWRAP);
+    // auto slice1 = network->addSlice(*deconv1->getOutput(0), 
+    //                                 nvinfer1::Dims{4, {0, 0, 0, 0}},
+    //                                 nvinfer1::Dims{4, {dims[0], dims[1]+1, dims[2]+1, dims[3]+1}},
+    //                                 nvinfer1::Dims{4, {1, 1, 1, 1}});
+    // assert(slice1);
+    // slice1->setMode(nvinfer1::SliceMode::kWRAP);
 
-    // auto pad1 = network->addPaddingNd(*deconv1->getOutput(0), nvinfer1::Dims2{0,0}, nvinfer1::Dims2{1,1});
-    // assert(pad1);
+    auto pad1 = network->addPaddingNd(*deconv1->getOutput(0), nvinfer1::Dims2{0,0}, nvinfer1::Dims2{1,1});
+    assert(pad1);
 
-    // int dim1 = pad1->getOutput(0)->getDimensions().d[0];
-    // int dim3 = pad1->getOutput(0)->getDimensions().d[2];
-    // int dim4 = pad1->getOutput(0)->getDimensions().d[3];
+    int dim1 = pad1->getOutput(0)->getDimensions().d[0];
+    int dim3 = pad1->getOutput(0)->getDimensions().d[2];
+    int dim4 = pad1->getOutput(0)->getDimensions().d[3];
 
-    // int zero_arr_size = dim1 * dim3 * dim4;
-    // float *zero_arr = new float[zero_arr_size];
-    // std::fill_n(zero_arr, zero_arr_size, 0.0f);
-    // weightMap["new_zero_arr"] = nvinfer1::Weights{nvinfer1::DataType::kFLOAT, zero_arr, zero_arr_size};
-    // auto const1 = network->addConstant(nvinfer1::Dims{4, {dim1, 1, dim3, dim4}}, weightMap["new_zero_arr"]);
+    int zero_arr_size = dim1 * dim3 * dim4;
+    float *zero_arr = new float[zero_arr_size];
+    std::fill_n(zero_arr, zero_arr_size, 0.0f);
+    weightMap["new_zero_arr"] = nvinfer1::Weights{nvinfer1::DataType::kFLOAT, zero_arr, zero_arr_size};
+    auto const1 = network->addConstant(nvinfer1::Dims{4, {dim1, 1, dim3, dim4}}, weightMap["new_zero_arr"]);
     
-    // nvinfer1::ITensor* arrays_to_concat[] = {pad1->getOutput(0), const1->getOutput(0)};
-    // auto concat1 = network->addConcatenation(arrays_to_concat, 2);
-    // assert(concat1);
-    // concat1->setAxis(1);
+    nvinfer1::ITensor* arrays_to_concat[] = {pad1->getOutput(0), const1->getOutput(0)};
+    auto concat1 = network->addConcatenation(arrays_to_concat, 2);
+    assert(concat1);
+    concat1->setAxis(1);
 
-    auto bn1 = addBatchNormNd(network, weightMap, *slice1->getOutput(0), lname + ".bn", 1e-5);
+    auto bn1 = addBatchNormNd(network, weightMap, *concat1->getOutput(0), lname + ".bn", 1e-5);
     assert(bn1);
 
     auto relu1 = network->addActivation(*bn1->getOutput(0), nvinfer1::ActivationType::kRELU);
@@ -146,9 +146,9 @@ void CostRegNet::SerializeEngine(char* cachePath, std::map<std::string, nvinfer1
 
     // Release host memory
     for (auto &mem : weightMap){   
-        // if (mem.first.rfind("new_", 0) == 0)
-            // delete[] (float*) mem.second.values;
-        // else
+        if (mem.first.rfind("new_", 0) == 0)
+            delete[] (float*) mem.second.values;
+        else
             free((void *)(mem.second.values));
     }
 }
