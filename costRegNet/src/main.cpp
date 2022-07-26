@@ -49,22 +49,22 @@ int main(int argc, char** argv){
 
     }
 
-    std::cout << std::fixed << std::setprecision(6) << std::endl;
+    // std::cout << std::fixed << std::setprecision(6) << std::endl;
 
-    auto outputDims = network->GetTensorDims(OUTPUT_NAMES[0]);
-    int outSize = 1;
-    std::cout << "output shape: ";
-    for (int j = 0; j < outputDims.nbDims; j++){
-        outSize *= outputDims.d[j];
-        std::cout << outputDims.d[j] << " ";
-    }
-    std::cout << std::endl;
+    // auto outputDims = network->GetTensorDims(OUTPUT_NAMES[0]);
+    // int outSize = 1;
+    // std::cout << "output shape: ";
+    // for (int j = 0; j < outputDims.nbDims; j++){
+    //     outSize *= outputDims.d[j];
+    //     std::cout << outputDims.d[j] << " ";
+    // }
+    // std::cout << std::endl;
         
-    for (int j = 0; j < outSize; j += outSize/10) {
-        std::cout << network->GetOutputPointersCPU(0)[j] << " ";
-    }
-    std::cout << std::endl;
-    std::cout << std::endl;
+    // for (int j = 0; j < outSize; j += outSize/10) {
+    //     std::cout << network->GetOutputPointersCPU(0)[j] << " ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << std::endl;
 
     // CUDA EVENTS
     delete network;
