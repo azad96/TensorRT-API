@@ -37,7 +37,7 @@ int main(int argc, char** argv){
 
     float* inputs[1] {data};
 
-    TensorRT *network = new CostRegNet(INPUT_NAMES, OUTPUT_NAMES, inputDims, batchSize, true, true);
+    TensorRT *network = new CostRegNet(INPUT_NAMES, OUTPUT_NAMES, inputDims, batchSize, false, true);
     network->PrepareInference(weightPath);
     network->Init();
 
