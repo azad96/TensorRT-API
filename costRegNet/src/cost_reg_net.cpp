@@ -96,10 +96,9 @@ nvinfer1::ITensor* costRegBlock(nvinfer1::INetworkDefinition *network, std::map<
 
 
 CostRegNet::CostRegNet(std::vector<const char*> inputNames, std::vector<const char*> outputNames, 
-        std::vector<std::vector<int>> inputDims, unsigned int batchSize, bool outputToCPU, bool hasFourDepths):
+        std::vector<std::vector<int>> inputDims, unsigned int batchSize, bool outputToCPU):
         TensorRT(inputNames, outputNames, inputDims, batchSize, outputToCPU)
 {
-    mHasFourDepths = hasFourDepths;
 }
 
 
@@ -147,9 +146,9 @@ void CostRegNet::SerializeEngine(char* cachePath, std::map<std::string, nvinfer1
 
     // Release host memory
     for (auto &mem : weightMap){   
-        if (mem.first.rfind("new_", 0) == 0)
-            delete[] (float*) mem.second.values;
-        else
+        // if (mem.first.rfind("new_", 0) == 0)
+            // delete[] (float*) mem.second.values;
+        // else
             free((void *)(mem.second.values));
     }
 }
