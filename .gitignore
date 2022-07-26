@@ -1,3 +1,6 @@
 .vscode/
 **/build/
-**/weights/
+**/weights/*.engine
+**/key_val.txt
+**/layers.txt
+simple/weights
