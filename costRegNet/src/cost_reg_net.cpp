@@ -131,6 +131,7 @@ void CostRegNet::SerializeEngine(char* cachePath, std::map<std::string, nvinfer1
     builder->setMaxBatchSize(maxBatchSize);
 
     if (builder->platformHasFastFp16()){
+        std::cout << "FP16 is supported" << std::cout;
         config->setFlag(nvinfer1::BuilderFlag::kFP16);
     }
 
