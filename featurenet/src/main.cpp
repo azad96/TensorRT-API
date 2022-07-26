@@ -33,7 +33,7 @@ int main(int argc, char** argv){
 
     float* inputs[1] {data};
 
-    TensorRT *network = new FeatureNet(INPUT_NAMES, OUTPUT_NAMES, inputDims, batchSize, true);
+    TensorRT *network = new FeatureNet(INPUT_NAMES, OUTPUT_NAMES, inputDims, batchSize, false);
     network->PrepareInference(weightPath);
 
     network->Init();
@@ -46,24 +46,24 @@ int main(int argc, char** argv){
 
     }
 
-    std::cout << std::fixed << std::setprecision(6) << std::endl;
+    // std::cout << std::fixed << std::setprecision(6) << std::endl;
 
-    for (int i = 0; i < 3; i++){
-        auto outputDims = network->GetTensorDims(OUTPUT_NAMES[i]);
-        int outSize = 1;
-        std::cout << "stage" << i+1 << " shape: ";
-        for (int j = 0; j < outputDims.nbDims; j++){
-            outSize *= outputDims.d[j];
-            std::cout << outputDims.d[j] << " ";
-        }
-        std::cout << std::endl;
+    // for (int i = 0; i < 3; i++){
+    //     auto outputDims = network->GetTensorDims(OUTPUT_NAMES[i]);
+    //     int outSize = 1;
+    //     std::cout << "stage" << i+1 << " shape: ";
+    //     for (int j = 0; j < outputDims.nbDims; j++){
+    //         outSize *= outputDims.d[j];
+    //         std::cout << outputDims.d[j] << " ";
+    //     }
+    //     std::cout << std::endl;
             
-        for (int j = 0; j < outSize; j += outSize/10) {
-            std::cout << network->GetOutputPointersCPU(i)[j] << " ";
-        }
-        std::cout << std::endl;
-        std::cout << std::endl;
-    }
+    //     for (int j = 0; j < outSize; j += outSize/10) {
+    //         std::cout << network->GetOutputPointersCPU(i)[j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    //     std::cout << std::endl;
+    // }
     // CUDA EVENTS
     delete network;
     return 0;
