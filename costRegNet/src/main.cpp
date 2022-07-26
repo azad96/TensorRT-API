@@ -39,9 +39,9 @@ int main(int argc, char** argv){
 
     TensorRT *network = new CostRegNet(INPUT_NAMES, OUTPUT_NAMES, inputDims, batchSize, true, true);
     network->PrepareInference(weightPath);
-
     network->Init();
-    for (int k=0; k<1; k++){
+
+    for (int k=0; k<10; k++){
         auto start = std::chrono::system_clock::now();
         network->DoInference(1, inputs);
         auto end = std::chrono::system_clock::now();
