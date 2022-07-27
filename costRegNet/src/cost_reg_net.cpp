@@ -34,7 +34,8 @@ nvinfer1::ITensor* deconv3d(nvinfer1::INetworkDefinition *network, std::map<std:
     auto dims = deconv1->getOutput(0)->getDimensions().d;
 
     const float fill_value[1] = {0};
-    auto fill_value_layer = network->addConstant(nvinfer1::Dims{0, {0}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, fill_value, 1});
+    auto fill_value_layer = network->addConstant(nvinfer1::Dims{1, {1}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, fill_value, 1});
+    // auto fill_value_layer = network->addConstant(nvinfer1::Dims{0, {0}}, nvinfer1::Weights{nvinfer1::DataType::kFLOAT, fill_value, 1});
 
     auto slice1 = network->addSlice(*deconv1->getOutput(0), 
                                     nvinfer1::Dims{4, {0, 0, 0, 0}},
